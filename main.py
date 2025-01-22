@@ -5,8 +5,10 @@ from discord.ext import commands
 import pandas as pd
 from collections import defaultdict
 from tabulate import tabulate  # For formatted table output
+from flask import Flask
+import threading
 
-# Load Discord Token from Koyeb Environment Variables
+# Load Discord Token from Environment Variables
 TOKEN = os.getenv("TOKEN")
 
 if not TOKEN:
@@ -132,6 +134,20 @@ async def resetjobs(interaction: discord.Interaction):
     job_data.clear()
     player_jobs.clear()
     await interaction.response.send_message("🔄 **Job list has been reset!** Players need to submit again.")
+
+# ✅ Fix for Koyeb's TCP Health Check
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web_server():
+    app.run(host="0.0.0.0", port=8000)
+
+# Run the Flask web server in a separate thread
+web_thread = threading.Thread(target=run_web_server, daemon=True)
+web_thread.start()
 
 # Run the bot
 bot.run(TOKEN)
