@@ -6,9 +6,20 @@ import pandas as pd
 from collections import defaultdict
 from tabulate import tabulate  # For formatted table output
 
-# Load Discord Token from Replit Secrets
-TOKEN = os.getenv("TOKEN")  # Stored in Replit Secrets
-WATAHERO_ID = 248504544407846914  # ✅ Watahero's Discord User ID
+# Load Discord Token from Koyeb Environment Variables
+TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    raise ValueError("ERROR: TOKEN environment variable is missing. Please set it in Koyeb.")
+
+# List of Allowed Users (Who Can Use /showjobs and /resetjobs)
+ALLOWED_USERS = {
+    248504544407846914,  # Watahero
+    546328217217400842,
+    1098370060327862495,
+    262282716731408385,
+    256843911945781279
+}
 
 # Valid FFXI Jobs (up to Chains of Promathia)
 VALID_JOBS = [
@@ -19,7 +30,7 @@ VALID_JOBS = [
 # Bot Setup
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="/", intents=intents)
-tree = bot.tree  # ✅ FIXED: Use bot.tree instead of app_commands.CommandTree(bot)
+tree = bot.tree  # Use bot.tree instead of app_commands.CommandTree(bot)
 
 # Dictionary to store job assignments
 job_data = defaultdict(lambda: {"Main": [], "Sub": []})
@@ -27,13 +38,13 @@ player_jobs = {}
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()  # ✅ Ensure commands are properly registered
+    await bot.tree.sync()  # Ensure commands are properly registered
     print(f'✅ Logged in as {bot.user}')
     print("Bot is now running in your Discord server!")
 
-# Function to check if the user is Watahero
-def is_watahero(interaction: discord.Interaction) -> bool:
-    return interaction.user.id == WATAHERO_ID
+# Function to check if a user is allowed to use admin commands
+def is_allowed_user(interaction: discord.Interaction) -> bool:
+    return interaction.user.id in ALLOWED_USERS
 
 # Function to create job selection dropdown
 class JobDropdown(discord.ui.Select):
@@ -47,7 +58,7 @@ class JobDropdown(discord.ui.Select):
             self.parent_view.main_job = self.values[0]
         elif self.custom_id == "sub_job":
             self.parent_view.sub_job = self.values[0]
-        await interaction.response.defer()  # ✅ Prevents "Interaction Failed"
+        await interaction.response.defer()  # Prevents "Interaction Failed"
 
 class JobSelectionView(discord.ui.View):
     def __init__(self, ctx):
@@ -55,13 +66,13 @@ class JobSelectionView(discord.ui.View):
         self.ctx = ctx
         self.main_job = None
         self.sub_job = None
-        self.add_item(JobDropdown("Select Main Job", "main_job", self))  # ✅ Pass parent view
-        self.add_item(JobDropdown("Select Sub Job", "sub_job", self))  # ✅ Pass parent view
+        self.add_item(JobDropdown("Select Main Job", "main_job", self))  # Pass parent view
+        self.add_item(JobDropdown("Select Sub Job", "sub_job", self))  # Pass parent view
 
     @discord.ui.button(label="Confirm Selection", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.main_job and self.sub_job:
-            player = interaction.user.display_name  # ✅ Removes numbers from username
+            player = interaction.user.display_name  # Removes numbers from username
 
             # Remove previous job entries if updating
             if player in player_jobs:
@@ -86,13 +97,13 @@ class JobSelectionView(discord.ui.View):
 @tree.command(name="setjob", description="Select your Main and Sub job.")
 async def setjob(interaction: discord.Interaction):
     view = JobSelectionView(interaction)
-    player = interaction.user.display_name  # ✅ Removes numbers from username
+    player = interaction.user.display_name  # Removes numbers from username
     await interaction.response.send_message(f"🛠 **{player}, select your Main and Sub job:**", view=view, ephemeral=True)
 
-# Command: Show job summary with a formatted table (Restricted to Watahero)
+# Command: Show job summary with a formatted table (Restricted to Allowed Users)
 @tree.command(name="showjobs", description="Show the job distribution table.")
 async def showjobs(interaction: discord.Interaction):
-    if not is_watahero(interaction):
+    if not is_allowed_user(interaction):
         await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
         return
 
@@ -100,9 +111,9 @@ async def showjobs(interaction: discord.Interaction):
         await interaction.response.send_message("❌ No jobs have been assigned yet.", ephemeral=True)
         return
 
-    # ✅ Fix: Remove numbers from usernames in the summary table
+    # Fix: Remove numbers from usernames in the summary table
     data = [(job, ", ".join([p.split("#")[0] for p in data["Main"]]), ", ".join([p.split("#")[0] for p in data["Sub"]])) for job, data in job_data.items()]
-
+    
     df = pd.DataFrame(data, columns=["Job", "Main", "Sub"])
 
     # Convert DataFrame to a formatted table with borders
@@ -111,10 +122,10 @@ async def showjobs(interaction: discord.Interaction):
     # Send the table to Discord
     await interaction.response.send_message(f"📊 **Job Distribution Table:**\n```{table_str}```")
 
-# Command: Reset job data (Restricted to Watahero)
-@tree.command(name="resetjobs", description="Reset all job assignments. (Watahero Only)")
+# Command: Reset job data (Restricted to Allowed Users)
+@tree.command(name="resetjobs", description="Reset all job assignments. (Allowed Users Only)")
 async def resetjobs(interaction: discord.Interaction):
-    if not is_watahero(interaction):
+    if not is_allowed_user(interaction):
         await interaction.response.send_message("❌ You don’t have permission to reset the job list.", ephemeral=True)
         return
 
