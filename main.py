@@ -17,7 +17,6 @@ if not TOKEN:
 # List of Allowed Users (Who Can Use /showjobs and /resetjobs)
 ALLOWED_USERS = {
     248504544407846914,  # Watahero
-    546328217217400842,
     1098370060327862495,
     262282716731408385,
     256843911945781279
