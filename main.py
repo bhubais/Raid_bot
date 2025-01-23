@@ -9,6 +9,7 @@ from collections import defaultdict
 from tabulate import tabulate  # For formatted table output
 from flask import Flask
 import threading
+from waitress import serve  # Replaces Flask's default server
 
 # Load Discord Token from Environment Variables
 TOKEN = os.getenv("TOKEN")
@@ -33,7 +34,7 @@ VALID_JOBS = [
 # Bot Setup
 intents = discord.Intents.default()
 intents.presences = True  # Required for keep-alive updates
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.AutoShardedBot(command_prefix="/", intents=intents)  # Use AutoShardedBot for better WebSocket handling
 tree = bot.tree  # Use bot.tree instead of app_commands.CommandTree(bot)
 
 # Dictionary to store job assignments
@@ -136,7 +137,7 @@ async def resetjobs(interaction: discord.Interaction):
     player_jobs.clear()
     await interaction.response.send_message("🔄 **Job list has been reset!** Players need to submit again.")
 
-# ✅ Fix for Koyeb's TCP Health Check
+# ✅ Flask Web Server Using Waitress to Satisfy Koyeb Health Checks
 app = Flask(__name__)
 
 @app.route("/")
@@ -144,27 +145,25 @@ def home():
     return "Bot is running!"
 
 def run_web_server():
-    app.run(host="0.0.0.0", port=8000)
+    serve(app, host="0.0.0.0", port=8000)  # Use waitress instead of Flask's dev server
 
 # Run the Flask web server in a separate thread
 web_thread = threading.Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
-# ✅ Keep-Alive Task to Prevent WebSocket Disconnects
+# ✅ Keep-Alive Task to Prevent WebSocket Disconnects (Reduced to 20 min)
 async def keep_alive():
     """Sends periodic updates to Discord to prevent idle disconnections."""
     while True:
-        await asyncio.sleep(300)  # Every 5 minutes
+        await asyncio.sleep(1200)  # Reduced frequency to every 20 minutes
         print("🟢 Sending keep-alive message to Discord.")
         try:
             await bot.change_presence(activity=discord.Game(name="Managing Jobs"))
+            print("✅ Keep-alive signal sent successfully.")
+        except discord.HTTPException as e:
+            print(f"⚠️ Keep-alive failed: {e}")
         except Exception as e:
-            print(f"⚠️ Failed to send keep-alive ping: {e}")
+            print(f"⚠️ Unexpected error in keep-alive: {e}")
 
 # ✅ Improved Auto-Reconnect Handling
-while True:
-    try:
-        bot.run(TOKEN, reconnect=True)
-    except Exception as e:
-        print(f"⚠️ Bot crashed: {e}. Restarting in 10 seconds...")
-        time.sleep(10)  # Wait before restarting
+bot.run(TOKEN, reconnect=True)

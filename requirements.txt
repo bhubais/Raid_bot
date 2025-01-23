@@ -2,3 +2,4 @@ discord
 pandas
 tabulate
 flask
+waitress
