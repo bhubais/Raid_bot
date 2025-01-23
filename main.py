@@ -1,4 +1,6 @@
 import os
+import time
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -30,6 +32,7 @@ VALID_JOBS = [
 
 # Bot Setup
 intents = discord.Intents.default()
+intents.presences = True  # Required for keep-alive updates
 bot = commands.Bot(command_prefix="/", intents=intents)
 tree = bot.tree  # Use bot.tree instead of app_commands.CommandTree(bot)
 
@@ -39,9 +42,12 @@ player_jobs = {}
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()  # Ensure commands are properly registered
+    await bot.tree.sync()
     print(f'✅ Logged in as {bot.user}')
     print("Bot is now running in your Discord server!")
+
+    # Start keep-alive background task
+    bot.loop.create_task(keep_alive())
 
 # Function to check if a user is allowed to use admin commands
 def is_allowed_user(interaction: discord.Interaction) -> bool:
@@ -112,15 +118,11 @@ async def showjobs(interaction: discord.Interaction):
         await interaction.response.send_message("❌ No jobs have been assigned yet.", ephemeral=True)
         return
 
-    # Fix: Remove numbers from usernames in the summary table
     data = [(job, ", ".join([p.split("#")[0] for p in data["Main"]]), ", ".join([p.split("#")[0] for p in data["Sub"]])) for job, data in job_data.items()]
     
     df = pd.DataFrame(data, columns=["Job", "Main", "Sub"])
-
-    # Convert DataFrame to a formatted table with borders
     table_str = tabulate(df, headers="keys", tablefmt="grid")
 
-    # Send the table to Discord
     await interaction.response.send_message(f"📊 **Job Distribution Table:**\n```{table_str}```")
 
 # Command: Reset job data (Restricted to Allowed Users)
@@ -148,5 +150,21 @@ def run_web_server():
 web_thread = threading.Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
-# Run the bot
-bot.run(TOKEN)
+# ✅ Keep-Alive Task to Prevent WebSocket Disconnects
+async def keep_alive():
+    """Sends periodic updates to Discord to prevent idle disconnections."""
+    while True:
+        await asyncio.sleep(300)  # Every 5 minutes
+        print("🟢 Sending keep-alive message to Discord.")
+        try:
+            await bot.change_presence(activity=discord.Game(name="Managing Jobs"))
+        except Exception as e:
+            print(f"⚠️ Failed to send keep-alive ping: {e}")
+
+# ✅ Improved Auto-Reconnect Handling
+while True:
+    try:
+        bot.run(TOKEN, reconnect=True)
+    except Exception as e:
+        print(f"⚠️ Bot crashed: {e}. Restarting in 10 seconds...")
+        time.sleep(10)  # Wait before restarting
