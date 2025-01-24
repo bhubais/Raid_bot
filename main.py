@@ -4,7 +4,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from collections import defaultdict
-from tabulate import tabulate
+import pandas as pd
+import matplotlib.pyplot as plt
+import io
 from flask import Flask
 import threading
 from waitress import serve
@@ -117,25 +119,41 @@ async def setjob(interaction: discord.Interaction):
     player = interaction.user.display_name  
     await interaction.response.send_message(f"🛠 **{player}, select your Main and Sub job:**", view=view, ephemeral=True)
 
-@tree.command(name="showjobs", description="Shows all job selections.")
+@tree.command(name="showjobs", description="Displays job selections as an image.")
 async def showjobs(interaction: discord.Interaction):
     if interaction.user.id not in ALLOWED_USERS:
         await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
         return
 
-    table = []
+    # Create a DataFrame for job selections
+    table_data = []
     for job, data in job_data.items():
-        table.append([job, ", ".join(data["Main"]) or "None", ", ".join(data["Sub"]) or "None"])
+        table_data.append([job, ", ".join(data["Main"]) or "None", ", ".join(data["Sub"]) or "None"])
 
-    job_table = tabulate(table, headers=["Job", "Main", "Sub"], tablefmt="grid") if table else "No job selections have been made yet."
+    if not table_data:
+        await interaction.response.send_message("❌ No job selections have been made yet.", ephemeral=True)
+        return
 
-    if len(job_table) > 2000:
-        chunks = [job_table[i:i + 1990] for i in range(0, len(job_table), 1990)]
-        await interaction.response.send_message("🛠 **Job selections are too long! Sending in chunks...**", ephemeral=True)
-        for chunk in chunks:
-            await interaction.channel.send(f"```\n{chunk}\n```")
-    else:
-        await interaction.response.send_message(f"```\n{job_table}\n```")
+    df = pd.DataFrame(table_data, columns=["Job", "Main", "Sub"])
+
+    # Generate the image using Matplotlib
+    fig, ax = plt.subplots(figsize=(8, len(df) * 0.5))
+    ax.axis("tight")
+    ax.axis("off")
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc="center", loc="center")
+
+    # Adjust table styling
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.auto_set_column_width([0, 1, 2])
+
+    # Save image to a buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png", bbox_inches="tight", dpi=150)
+    buffer.seek(0)
+
+    # Send image to Discord
+    await interaction.response.send_message("📜 **Current Job Selections:**", file=discord.File(fp=buffer, filename="job_table.png"))
 
 @tree.command(name="resetjobs", description="Resets all job selections.")
 async def resetjobs(interaction: discord.Interaction):
