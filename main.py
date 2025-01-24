@@ -49,17 +49,24 @@ player_jobs = {}
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()  # 🔹 Ensures all slash commands are registered globally
-    print(f'✅ Logged in as {bot.user}')
-    print("Bot is now running in your Discord server!")
+    try:
+        await bot.tree.sync()  # 🔹 Forces global sync of all commands
+        print(f'✅ Logged in as {bot.user}')
+        print("✅ All slash commands have been registered globally.")
 
-    # Start keep-alive background tasks
-    bot.loop.create_task(keep_alive())
-    bot.loop.create_task(keep_koyeb_alive())
+        # List all available commands for verification
+        print(f"Available commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
 
-    # Confirm successful command sync
-    for guild in bot.guilds:
-        print(f"🛠 Synced commands in {guild.name} (ID: {guild.id})")
+        # Confirm successful command sync
+        for guild in bot.guilds:
+            print(f"🛠 Synced commands in {guild.name} (ID: {guild.id})")
+
+        # Start keep-alive background tasks
+        bot.loop.create_task(keep_alive())
+        bot.loop.create_task(keep_koyeb_alive())
+
+    except Exception as e:
+        print(f"❌ Command sync failed: {e}")
 
 # Function to check if a user is allowed to use admin commands
 def is_allowed_user(interaction: discord.Interaction) -> bool:
