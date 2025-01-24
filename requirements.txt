@@ -3,3 +3,4 @@ pandas
 tabulate
 flask
 waitress
+requests
