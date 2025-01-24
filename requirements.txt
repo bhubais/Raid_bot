@@ -4,3 +4,4 @@ tabulate
 flask
 waitress
 requests
+matplotlib 
