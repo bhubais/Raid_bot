@@ -142,10 +142,14 @@ async def unlock(interaction: discord.Interaction):
 
     job_selection_locked = False
 
+    # Defer the response to avoid the "already acknowledged" error
+    await interaction.response.defer()
+
     # Send an announcement mentioning everyone
     await interaction.channel.send("@everyone 🔓 **Job selection is now open!** Use `/setjob` to submit your loot preferences for Main and Sub.")
 
-    await interaction.response.send_message("🔓 **Job selection has been unlocked! Players can now submit jobs again.**")
+    # Follow-up message to confirm the unlock
+    await interaction.followup.send("🔓 **Job selection has been unlocked! Players can now submit jobs again.**")
 
 # ✅ Flask Web Server Using Waitress to Satisfy Koyeb Health Checks
 app = Flask(__name__)
