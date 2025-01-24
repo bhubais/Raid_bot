@@ -9,7 +9,7 @@ from collections import defaultdict
 from tabulate import tabulate  # For formatted table output
 from flask import Flask
 import threading
-from waitress import serve  # Replaces Flask's default server
+from waitress import serve  # Production server for Flask
 
 # Load Discord Token from Environment Variables
 TOKEN = os.getenv("TOKEN")
@@ -17,7 +17,7 @@ TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("ERROR: TOKEN environment variable is missing. Please set it in Koyeb.")
 
-# List of Allowed Users (Who Can Use /showjobs and /resetjobs)
+# List of Allowed Users (Who Can Use /lock, /unlock, /showjobs, and /resetjobs)
 ALLOWED_USERS = {
     248504544407846914,  # Watahero
     1098370060327862495,
@@ -31,10 +31,13 @@ VALID_JOBS = [
     "BST", "BRD", "RNG", "SAM", "NIN", "DRG", "SMN"
 ]
 
+# Job Selection Lock State
+job_selection_locked = False  # Default is unlocked
+
 # Bot Setup
 intents = discord.Intents.default()
 intents.presences = True  # Required for keep-alive updates
-bot = commands.AutoShardedBot(command_prefix="/", intents=intents)  # Use AutoShardedBot for better WebSocket handling
+bot = commands.AutoShardedBot(command_prefix="/", intents=intents)  # AutoShardedBot for better WebSocket handling
 tree = bot.tree  # Use bot.tree instead of app_commands.CommandTree(bot)
 
 # Dictionary to store job assignments
@@ -49,6 +52,7 @@ async def on_ready():
 
     # Start keep-alive background task
     bot.loop.create_task(keep_alive())
+    bot.loop.create_task(keep_koyeb_alive())
 
 # Function to check if a user is allowed to use admin commands
 def is_allowed_user(interaction: discord.Interaction) -> bool:
@@ -104,38 +108,37 @@ class JobSelectionView(discord.ui.View):
 
 @tree.command(name="setjob", description="Select your Main and Sub job.")
 async def setjob(interaction: discord.Interaction):
+    global job_selection_locked
+
+    if job_selection_locked:
+        await interaction.response.send_message("🔒 **Job selection is currently locked. Please wait until it is unlocked.**", ephemeral=True)
+        return
+
     view = JobSelectionView(interaction)
     player = interaction.user.display_name  # Removes numbers from username
     await interaction.response.send_message(f"🛠 **{player}, select your Main and Sub job:**", view=view, ephemeral=True)
 
-# Command: Show job summary with a formatted table (Restricted to Allowed Users)
-@tree.command(name="showjobs", description="Show the job distribution table.")
-async def showjobs(interaction: discord.Interaction):
+@tree.command(name="lock", description="Locks job selection to prevent further submissions.")
+async def lock(interaction: discord.Interaction):
+    global job_selection_locked
+
     if not is_allowed_user(interaction):
-        await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ You don’t have permission to lock job selection.", ephemeral=True)
         return
 
-    if not job_data:
-        await interaction.response.send_message("❌ No jobs have been assigned yet.", ephemeral=True)
-        return
+    job_selection_locked = True
+    await interaction.response.send_message("🔒 **Job selection has been locked! No further submissions are allowed.**")
 
-    data = [(job, ", ".join([p.split("#")[0] for p in data["Main"]]), ", ".join([p.split("#")[0] for p in data["Sub"]])) for job, data in job_data.items()]
-    
-    df = pd.DataFrame(data, columns=["Job", "Main", "Sub"])
-    table_str = tabulate(df, headers="keys", tablefmt="grid")
+@tree.command(name="unlock", description="Unlocks job selection to allow submissions again.")
+async def unlock(interaction: discord.Interaction):
+    global job_selection_locked
 
-    await interaction.response.send_message(f"📊 **Job Distribution Table:**\n```{table_str}```")
-
-# Command: Reset job data (Restricted to Allowed Users)
-@tree.command(name="resetjobs", description="Reset all job assignments. (Allowed Users Only)")
-async def resetjobs(interaction: discord.Interaction):
     if not is_allowed_user(interaction):
-        await interaction.response.send_message("❌ You don’t have permission to reset the job list.", ephemeral=True)
+        await interaction.response.send_message("❌ You don’t have permission to unlock job selection.", ephemeral=True)
         return
 
-    job_data.clear()
-    player_jobs.clear()
-    await interaction.response.send_message("🔄 **Job list has been reset!** Players need to submit again.")
+    job_selection_locked = False
+    await interaction.response.send_message("🔓 **Job selection has been unlocked! Players can now submit jobs again.**")
 
 # ✅ Flask Web Server Using Waitress to Satisfy Koyeb Health Checks
 app = Flask(__name__)
@@ -151,19 +154,28 @@ def run_web_server():
 web_thread = threading.Thread(target=run_web_server, daemon=True)
 web_thread.start()
 
-# ✅ Keep-Alive Task to Prevent WebSocket Disconnects (Reduced to 20 min)
+# ✅ Keep-Alive Task to Prevent WebSocket Disconnects
 async def keep_alive():
     """Sends periodic updates to Discord to prevent idle disconnections."""
     while True:
-        await asyncio.sleep(1200)  # Reduced frequency to every 20 minutes
+        await asyncio.sleep(1800)  # Every 30 minutes
         print("🟢 Sending keep-alive message to Discord.")
         try:
             await bot.change_presence(activity=discord.Game(name="Managing Jobs"))
-            print("✅ Keep-alive signal sent successfully.")
-        except discord.HTTPException as e:
-            print(f"⚠️ Keep-alive failed: {e}")
         except Exception as e:
-            print(f"⚠️ Unexpected error in keep-alive: {e}")
+            print(f"⚠️ Keep-alive failed: {e}")
+
+# ✅ Prevent Koyeb from Stopping Instance
+import requests
+async def keep_koyeb_alive():
+    """Periodically pings the bot's own web server to prevent Koyeb from stopping the instance."""
+    while True:
+        await asyncio.sleep(600)  # Every 10 minutes
+        try:
+            requests.get("http://127.0.0.1:8000")
+            print("🌍 Pinged Koyeb server to prevent instance shutdown.")
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Failed to ping Koyeb server: {e}")
 
 # ✅ Improved Auto-Reconnect Handling
 bot.run(TOKEN, reconnect=True)
