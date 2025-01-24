@@ -3,7 +3,6 @@ import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
-import pandas as pd
 from collections import defaultdict
 from tabulate import tabulate  # For formatted table output
 from flask import Flask
@@ -49,16 +48,26 @@ player_jobs = {}
 @bot.event
 async def on_ready():
     try:
-        await bot.tree.sync()  # 🔹 Forces global sync of all commands
+        # Sync global commands
+        await bot.tree.sync()  
         print(f'✅ Logged in as {bot.user}')
         print("✅ All slash commands have been registered globally.")
-        print(f"Available commands: {[cmd.name for cmd in bot.tree.get_commands()]}")
+
+        # Verify available commands
+        registered_commands = [cmd.name for cmd in bot.tree.get_commands()]
+        print(f"🛠 Available Commands: {registered_commands}")
+
+        # Ensure /setjob exists
+        if "setjob" not in registered_commands:
+            print("⚠️ /setjob is missing! Trying to register it again...")
+            bot.tree.add_command(setjob)  # Manually add /setjob
+            await bot.tree.sync()  # Resync after adding
 
         for guild in bot.guilds:
-            print(f"🛠 Synced commands in {guild.name} (ID: {guild.id})")
+            print(f"🔄 Synced commands in {guild.name} (ID: {guild.id})")
 
-        bot.loop.create_task(keep_alive())  # 🔹 Prevents bot from going idle
-        bot.loop.create_task(keep_koyeb_alive())  # 🔹 Keeps the bot alive on Koyeb
+        bot.loop.create_task(keep_alive())  
+        bot.loop.create_task(keep_koyeb_alive())  
 
     except Exception as e:
         print(f"❌ Command sync failed: {e}")
@@ -85,6 +94,64 @@ async def keep_koyeb_alive():
         except requests.exceptions.RequestException as e:
             print(f"⚠️ Failed to ping Koyeb server: {e}")
 
+@tree.command(name="setjob", description="Select your Main and Sub job.")
+async def setjob(interaction: discord.Interaction):
+    global job_selection_locked
+
+    if job_selection_locked:
+        await interaction.response.send_message("🔒 **Job selection is currently locked. Please wait until it is unlocked.**", ephemeral=True)
+        return
+
+    # Dropdown menu for job selection
+    class JobDropdown(discord.ui.Select):
+        def __init__(self, placeholder, custom_id, parent_view):
+            self.parent_view = parent_view
+            options = [discord.SelectOption(label=job, value=job) for job in VALID_JOBS]
+            super().__init__(placeholder=placeholder, options=options, custom_id=custom_id)
+
+        async def callback(self, interaction: discord.Interaction):
+            if self.custom_id == "main_job":
+                self.parent_view.main_job = self.values[0]
+            elif self.custom_id == "sub_job":
+                self.parent_view.sub_job = self.values[0]
+            await interaction.response.defer()
+
+    class JobSelectionView(discord.ui.View):
+        def __init__(self, ctx):
+            super().__init__(timeout=30)
+            self.ctx = ctx
+            self.main_job = None
+            self.sub_job = None
+            self.add_item(JobDropdown("Select Main Job", "main_job", self))
+            self.add_item(JobDropdown("Select Sub Job", "sub_job", self))
+
+        @discord.ui.button(label="Confirm Selection", style=discord.ButtonStyle.green)
+        async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if self.main_job and self.sub_job:
+                player = interaction.user.display_name  
+
+                if player in player_jobs:
+                    prev_main, prev_sub = player_jobs[player]
+                    job_data[prev_main]["Main"].remove(player)
+                    if prev_sub:
+                        job_data[prev_sub]["Sub"].remove(player)
+
+                job_data[self.main_job]["Main"].append(player)
+                job_data[self.sub_job]["Sub"].append(player)
+
+                player_jobs[player] = (self.main_job, self.sub_job)
+
+                await interaction.response.send_message(
+                    f"✅ {player}, your main job is **{self.main_job}** and sub job is **{self.sub_job}**.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message("❌ Please select both Main and Sub jobs.", ephemeral=True)
+
+    view = JobSelectionView(interaction)
+    player = interaction.user.display_name  
+    await interaction.response.send_message(f"🛠 **{player}, select your Main and Sub job:**", view=view, ephemeral=True)
+
 @tree.command(name="lock", description="Locks job selection to prevent further submissions.")
 async def lock(interaction: discord.Interaction):
     global job_selection_locked
@@ -107,32 +174,6 @@ async def unlock(interaction: discord.Interaction):
     job_selection_locked = False
     await interaction.response.send_message("🔓 **Job selection has been unlocked! Players can now submit jobs again.**", ephemeral=True)
     await interaction.channel.send("@everyone 🔓 **Job selection is now open!** Use `/setjob` to submit your loot preferences for Main and Sub.")
-
-@tree.command(name="showjobs", description="Shows all job selections.")
-async def showjobs(interaction: discord.Interaction):
-    if interaction.user.id not in ALLOWED_USERS:
-        await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
-        return
-
-    table = []
-    for job, data in job_data.items():
-        table.append([job, ", ".join(data["Main"]) or "None", ", ".join(data["Sub"]) or "None"])
-
-    job_table = tabulate(table, headers=["Job", "Main", "Sub"], tablefmt="grid") if table else "No job selections have been made yet."
-    await interaction.response.send_message(f"```\n{job_table}\n```")
-
-@tree.command(name="resetjobs", description="Resets all job selections.")
-async def resetjobs(interaction: discord.Interaction):
-    global job_data, player_jobs
-
-    if interaction.user.id not in ALLOWED_USERS:
-        await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
-        return
-
-    job_data = defaultdict(lambda: {"Main": [], "Sub": []})
-    player_jobs = {}
-
-    await interaction.response.send_message("🔄 **All job selections have been reset.**")
 
 # ✅ Flask Web Server for Koyeb Health Check
 app = Flask(__name__)
