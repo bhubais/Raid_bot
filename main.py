@@ -10,6 +10,7 @@ from tabulate import tabulate  # For formatted table output
 from flask import Flask
 import threading
 from waitress import serve  # Production server for Flask
+import requests  # Required for Koyeb keep-alive
 
 # Load Discord Token from Environment Variables
 TOKEN = os.getenv("TOKEN")
@@ -31,12 +32,14 @@ VALID_JOBS = [
     "BST", "BRD", "RNG", "SAM", "NIN", "DRG", "SMN"
 ]
 
-# Job Selection Lock State
-job_selection_locked = False  # Default is unlocked
+# Job Selection Lock State (STARTS LOCKED)
+job_selection_locked = True  
 
 # Bot Setup
 intents = discord.Intents.default()
 intents.presences = True  # Required for keep-alive updates
+intents.guilds = True
+intents.messages = True
 bot = commands.AutoShardedBot(command_prefix="/", intents=intents)  # AutoShardedBot for better WebSocket handling
 tree = bot.tree  # Use bot.tree instead of app_commands.CommandTree(bot)
 
@@ -50,7 +53,7 @@ async def on_ready():
     print(f'✅ Logged in as {bot.user}')
     print("Bot is now running in your Discord server!")
 
-    # Start keep-alive background task
+    # Start keep-alive background tasks
     bot.loop.create_task(keep_alive())
     bot.loop.create_task(keep_koyeb_alive())
 
@@ -138,6 +141,10 @@ async def unlock(interaction: discord.Interaction):
         return
 
     job_selection_locked = False
+
+    # Send an announcement mentioning everyone
+    await interaction.channel.send("@everyone 🔓 **Job selection is now open!** Use `/setjob` to submit your loot preferences for Main and Sub.")
+
     await interaction.response.send_message("🔓 **Job selection has been unlocked! Players can now submit jobs again.**")
 
 # ✅ Flask Web Server Using Waitress to Satisfy Koyeb Health Checks
@@ -159,21 +166,18 @@ async def keep_alive():
     """Sends periodic updates to Discord to prevent idle disconnections."""
     while True:
         await asyncio.sleep(1800)  # Every 30 minutes
-        print("🟢 Sending keep-alive message to Discord.")
         try:
             await bot.change_presence(activity=discord.Game(name="Managing Jobs"))
         except Exception as e:
             print(f"⚠️ Keep-alive failed: {e}")
 
 # ✅ Prevent Koyeb from Stopping Instance
-import requests
 async def keep_koyeb_alive():
     """Periodically pings the bot's own web server to prevent Koyeb from stopping the instance."""
     while True:
         await asyncio.sleep(600)  # Every 10 minutes
         try:
             requests.get("http://127.0.0.1:8000")
-            print("🌍 Pinged Koyeb server to prevent instance shutdown.")
         except requests.exceptions.RequestException as e:
             print(f"⚠️ Failed to ping Koyeb server: {e}")
 
