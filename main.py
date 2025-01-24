@@ -15,7 +15,7 @@ if not TOKEN:
     raise ValueError("ERROR: TOKEN environment variable is missing. Please set it in Koyeb.")
 
 ALLOWED_USERS = {
-    248504544407846914,  # Watahero
+    248504544407846914,
     546328217217400842,
     1098370060327862495,
     262282716731408385,
@@ -128,7 +128,14 @@ async def showjobs(interaction: discord.Interaction):
         table.append([job, ", ".join(data["Main"]) or "None", ", ".join(data["Sub"]) or "None"])
 
     job_table = tabulate(table, headers=["Job", "Main", "Sub"], tablefmt="grid") if table else "No job selections have been made yet."
-    await interaction.response.send_message(f"```\n{job_table}\n```")
+
+    if len(job_table) > 2000:
+        chunks = [job_table[i:i + 1990] for i in range(0, len(job_table), 1990)]
+        await interaction.response.send_message("🛠 **Job selections are too long! Sending in chunks...**", ephemeral=True)
+        for chunk in chunks:
+            await interaction.channel.send(f"```\n{chunk}\n```")
+    else:
+        await interaction.response.send_message(f"```\n{job_table}\n```")
 
 @tree.command(name="resetjobs", description="Resets all job selections.")
 async def resetjobs(interaction: discord.Interaction):
@@ -149,29 +156,6 @@ async def on_ready():
         await bot.tree.sync()  
         print(f'✅ Logged in as {bot.user}')
         print("✅ All slash commands have been registered globally.")
-
-        registered_commands = {cmd.name for cmd in bot.tree.get_commands()}
-        print(f"🛠 Available Commands: {registered_commands}")
-
-        missing_commands = {"setjob", "lock", "unlock", "showjobs", "resetjobs"} - registered_commands
-        if missing_commands:
-            print(f"⚠️ Missing commands: {missing_commands}. Registering them now...")
-            if "setjob" in missing_commands:
-                bot.tree.add_command(setjob)
-            if "lock" in missing_commands:
-                bot.tree.add_command(lock)
-            if "unlock" in missing_commands:
-                bot.tree.add_command(unlock)
-            if "showjobs" in missing_commands:
-                bot.tree.add_command(showjobs)
-            if "resetjobs" in missing_commands:
-                bot.tree.add_command(resetjobs)
-
-            await bot.tree.sync()  
-
-        for guild in bot.guilds:
-            print(f"🔄 Synced commands in {guild.name} (ID: {guild.id})")
-
     except Exception as e:
         print(f"❌ Command sync failed: {e}")
 
