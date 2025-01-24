@@ -61,65 +61,21 @@ async def on_ready():
 def is_allowed_user(interaction: discord.Interaction) -> bool:
     return interaction.user.id in ALLOWED_USERS
 
-# Function to create job selection dropdown
-class JobDropdown(discord.ui.Select):
-    def __init__(self, placeholder, custom_id, parent_view):
-        self.parent_view = parent_view  # Link parent view
-        options = [discord.SelectOption(label=job, value=job) for job in VALID_JOBS]
-        super().__init__(placeholder=placeholder, options=options, custom_id=custom_id)
-
-    async def callback(self, interaction: discord.Interaction):
-        if self.custom_id == "main_job":
-            self.parent_view.main_job = self.values[0]
-        elif self.custom_id == "sub_job":
-            self.parent_view.sub_job = self.values[0]
-        await interaction.response.defer()  # Prevents "Interaction Failed"
-
-class JobSelectionView(discord.ui.View):
-    def __init__(self, ctx):
-        super().__init__(timeout=30)
-        self.ctx = ctx
-        self.main_job = None
-        self.sub_job = None
-        self.add_item(JobDropdown("Select Main Job", "main_job", self))  # Pass parent view
-        self.add_item(JobDropdown("Select Sub Job", "sub_job", self))  # Pass parent view
-
-    @discord.ui.button(label="Confirm Selection", style=discord.ButtonStyle.green)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.main_job and self.sub_job:
-            player = interaction.user.display_name  # Removes numbers from username
-
-            # Remove previous job entries if updating
-            if player in player_jobs:
-                prev_main, prev_sub = player_jobs[player]
-                job_data[prev_main]["Main"].remove(player)
-                if prev_sub:
-                    job_data[prev_sub]["Sub"].remove(player)
-
-            # Add new jobs
-            job_data[self.main_job]["Main"].append(player)
-            job_data[self.sub_job]["Sub"].append(player)
-
-            player_jobs[player] = (self.main_job, self.sub_job)
-
-            await interaction.response.send_message(
-                f"✅ {player}, your main job is **{self.main_job}** and sub job is **{self.sub_job}**.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message("❌ Please select both Main and Sub jobs.", ephemeral=True)
-
-@tree.command(name="setjob", description="Select your Main and Sub job.")
-async def setjob(interaction: discord.Interaction):
+@tree.command(name="unlock", description="Unlocks job selection to allow submissions again.")
+async def unlock(interaction: discord.Interaction):
     global job_selection_locked
 
-    if job_selection_locked:
-        await interaction.response.send_message("🔒 **Job selection is currently locked. Please wait until it is unlocked.**", ephemeral=True)
+    if not is_allowed_user(interaction):
+        await interaction.response.send_message("❌ You don’t have permission to unlock job selection.", ephemeral=True)
         return
 
-    view = JobSelectionView(interaction)
-    player = interaction.user.display_name  # Removes numbers from username
-    await interaction.response.send_message(f"🛠 **{player}, select your Main and Sub job:**", view=view, ephemeral=True)
+    job_selection_locked = False
+
+    # Properly acknowledge the interaction before sending announcements
+    await interaction.response.send_message("🔓 **Job selection has been unlocked! Players can now submit jobs again.**", ephemeral=True)
+
+    # Send an announcement mentioning everyone
+    await interaction.channel.send("@everyone 🔓 **Job selection is now open!** Use `/setjob` to submit your loot preferences for Main and Sub.")
 
 @tree.command(name="lock", description="Locks job selection to prevent further submissions.")
 async def lock(interaction: discord.Interaction):
@@ -131,22 +87,6 @@ async def lock(interaction: discord.Interaction):
 
     job_selection_locked = True
     await interaction.response.send_message("🔒 **Job selection has been locked! No further submissions are allowed.**")
-
-@tree.command(name="unlock", description="Unlocks job selection to allow submissions again.")
-async def unlock(interaction: discord.Interaction):
-    global job_selection_locked
-
-    if not is_allowed_user(interaction):
-        await interaction.response.send_message("❌ You don’t have permission to unlock job selection.", ephemeral=True)
-        return
-
-    job_selection_locked = False
-
-    # Acknowledge the interaction first to prevent "already acknowledged" error
-    await interaction.response.defer()
-
-    # Send the announcement mentioning everyone
-    await interaction.channel.send("@everyone 🔓 **Job selection is now open!** Use `/setjob` to submit your loot preferences for Main and Sub.")
 
 # ✅ Flask Web Server Using Waitress to Satisfy Koyeb Health Checks
 app = Flask(__name__)
