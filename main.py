@@ -125,13 +125,15 @@ async def showjobs(interaction: discord.Interaction):
         await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
         return
 
+    await interaction.response.defer()  # Defer response to prevent timeout
+
     # Create a DataFrame for job selections
     table_data = []
     for job, data in job_data.items():
         table_data.append([job, ", ".join(data["Main"]) or "None", ", ".join(data["Sub"]) or "None"])
 
     if not table_data:
-        await interaction.response.send_message("❌ No job selections have been made yet.", ephemeral=True)
+        await interaction.followup.send("❌ No job selections have been made yet.", ephemeral=True)
         return
 
     df = pd.DataFrame(table_data, columns=["Job", "Main", "Sub"])
@@ -153,7 +155,7 @@ async def showjobs(interaction: discord.Interaction):
     buffer.seek(0)
 
     # Send image to Discord
-    await interaction.response.send_message("📜 **Current Job Selections:**", file=discord.File(fp=buffer, filename="job_table.png"))
+    await interaction.followup.send("📜 **Current Job Selections:**", file=discord.File(fp=buffer, filename="job_table.png"))
 
 @tree.command(name="resetjobs", description="Resets all job selections.")
 async def resetjobs(interaction: discord.Interaction):
