@@ -125,7 +125,8 @@ async def showjobs(interaction: discord.Interaction):
         await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
         return
 
-    await interaction.response.defer()  # Defer response to prevent timeout
+    # **Send initial response quickly to prevent timeout**
+    await interaction.response.send_message("📜 Generating job table, please wait...", ephemeral=True)
 
     # Create a DataFrame for job selections
     table_data = []
@@ -154,7 +155,7 @@ async def showjobs(interaction: discord.Interaction):
     plt.savefig(buffer, format="png", bbox_inches="tight", dpi=150)
     buffer.seek(0)
 
-    # Send image to Discord
+    # **Send follow-up message with the image**
     await interaction.followup.send("📜 **Current Job Selections:**", file=discord.File(fp=buffer, filename="job_table.png"))
 
 @tree.command(name="resetjobs", description="Resets all job selections.")
